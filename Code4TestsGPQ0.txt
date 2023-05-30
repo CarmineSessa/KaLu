@@ -1,0 +1,1223 @@
+--------------------------------------------
+-- IteraKaLuRel(Omega,II,JJ,KK,Lmin,Lmax) --
+--------------------------------------------
+
+-- AIM:
+-- This algorithm generates inputs for MainKaLu with until L <= Lmax.
+-- At each iteration, it checks if the polynomial G_PQ is null
+-- when the subvariety Delta_Q is not relevant.
+--
+-- INPUT:
+-- Omega - Integer equal to the length of the flag
+-- II, JJ, KK - starting integers
+--              (see MainKaLu's input I, J, K)
+-- Lmin - minimum value of L (see MainKaLu's input)
+-- Lmax - maxmum value of L (see MainKaLu's input)
+--
+-- LOCAL VARIABLES:
+-- I, J, K - integers for MainKaLu
+-- Inp - list consisting of the components of I, of K,
+--       of the components of J and of L
+-- P - zero vector which represents the ambient Schubert variety
+-- QMaxi - vector such that I + QMaxi := [K, ..., K]
+-- QQ - matrix of vectors between P and QMaxi.
+--      The first index represents the distance from P;
+--      whereas the second one does not play a particular role.
+-- GPQ - polinomyal G_PQ
+-- Fi - variable for the output file
+--
+-- SUBFUNCTIONS:
+-- MainKaLu, Binomiale, TauPQ, Divide,
+-- SchubertVariety, Actual, PiSmall,
+-- Riporto, LightPiSmall
+
+Define IteraKaLuRel(Omega,II,JJ,KK,Lmin,Lmax)
+  TopLevel MainKaLu;
+  TopLevel Binomiale;
+  TopLevel TauPQ;
+  TopLevel Divide;
+  TopLevel SchubertVariety;
+  TopLevel Actual;
+  TopLevel PiSmall;
+  TopLevel Riporto;
+
+-- Open the file OutGPQ0.txt on which the output is going to be saved
+
+  Fi := OpenOFile("OutGPQ0.txt");
+
+-- Check if Omega and Lmax are positive, Lmin <= Lmax and that Len(II) = Len(JJ) = Omega
+
+  If (Omega <= 0 Or Lmax <= 0 Or Lmin > Lmax Or Len(II) <> Omega Or Len(JJ) <> Omega) Then
+    PrintLn("Check input.");
+  Else
+
+-- Print a short description of the algorithm
+
+    PrintLn("This algorithm checks if G_PQ = 0 for relevant varieties.") on Fi;
+    PrintLn("The number Omega of essential conditions is fixed") on Fi;
+    PrintLn("and the condition I[1] < ... < I[Omega] < K <= J[1] <") on Fi;
+    PrintLn("< ... < J[Omega] < L is imposed.") on Fi;
+
+-- If Lmin <= 2*Omega + 1, put Lmin = 2*Omega + 2
+
+    If 2*Omega + 1 >= Lmin Then
+      Lmin := 2*Omega + 2;
+    EndIf;
+
+-- Inizialize Inp
+
+    Inp := concat(II,[KK],JJ,[Lmin]);
+    While Inp[2*Omega + 2] <= Lmax Do
+      P := [0 | T In 1..Omega];
+
+-- Check Inp
+
+      Inp := Riporto(Omega,ref Inp);
+
+-- Define I, J, K, L
+
+      I := [Inp[T] | T In 1..Omega];
+      K := Inp[Omega + 1];
+      J := [Inp[T] | T In (Omega + 2)..(2*Omega + 1)];
+      L := Inp[2*Omega + 2];
+
+-- Check if Inp[2*Omega + 2] <= Lmax and P is a Schubert variety
+
+      If L <= Lmax And SchubertVariety(P,I,J,K,L) Then
+        PA := Actual(P,I,J,K,L);
+        LPA := Len(PA);
+
+-- Check if Delta_P has Omega essential conditions and Pi is not small
+
+        If LPA = Omega And Not(LightPiSmall(I, J, K, L)) Then
+          PrintLn "I := ", I, ", K := ", K, ", J := ", J, ", L := ", L on Fi;
+
+-- Define QMaxi
+
+          QMaxi := [K - I[T] | T In 1..LPA];
+
+-- If Delta_QMaxi has distanza 1 from Delta_P, it is the only Delta_P-variety
+
+          If Sum(QMaxi) = 1 Then
+
+-- Check if Delta_Q is relevant
+
+            If Not(PiSmall(P,I,J,K,L,QMaxi)) Then
+              GPQ := MainKaLu(P,I,J,K,L,QMaxi);
+
+-- Check if GPQ <> 0
+
+              If GPQ = 0 Then
+                PrintLn "Q := ", QMaxi, ";" on Fi;
+                PrintLn "Warning: Delta_Q relevant but GPQ = 0." on Fi;
+              EndIf;
+            EndIf;
+          Else
+
+-- Build the list QQ of all non-zero vettors <= QMaxi.
+
+            QQ := TauPQ(P,QMaxi);
+            QQ := Concat(QQ, [[QMaxi]]);
+
+-- Check if G_PQ <> 0 for all Q in QQ corresponding to a relevant Schubert variety.
+
+            U := 1;
+            V := 1;
+            While U <= Len(QQ) Do
+              While V <= Len(QQ[U]) Do
+                If SchubertVariety(QQ[U,V],I,J,K,L) Then
+                  If Not(PiSmall(P,I,J,K,L,QQ[U,V])) Then
+                    GPQ := MainKaLu(P,I,J,K,L,QQ[U,V]);
+                    If GPQ = 0 Then
+                      PrintLn "Q := ", QQ[U,V], ";" on Fi;
+                      PrintLn "Warning: Delta_Q relevant, but GPQ = 0." on Fi;
+                    EndIf;
+                  EndIf;
+                EndIf;
+                V := V + 1;
+              EndWhile;
+              U := U + 1;
+              V := 1;
+            EndWhile;
+          EndIf;
+        EndIf;
+      EndIf;
+      Inp[1] := Inp[1] + 1;
+    EndWhile;
+  EndIf;
+
+-- Close the files on which the outputs have been saved
+
+  Close(Fi);
+EndDefine;
+
+-----------------------------
+-- OrdineCondizioni(T1,T2) --
+-----------------------------
+
+-- AIM:
+-- Given two lists correspoding to
+-- two S-varieties Delta_P and Delta_Q and
+-- their essential flags (i.e. each list
+-- contains the vectors of increments P and Q
+-- and the lists PA and QA of pointers to
+-- their essential conditions), we check if the
+-- essential flag of Delta_Q is shorter than the
+-- one of Delta_P.
+--
+-- INPUT:
+-- T1, T2: lists as described above.
+--
+-- OUTPUT:
+-- B: True if len(T1[2])<=len(T2[2])
+
+Define OrdineCondizioni(T1,T2)
+  B:=False;
+  If len(T1[2])<=len(T2[2]) Then
+    B:=True;
+  EndIf;
+  Return B;
+EndDefine;
+
+---------------------------
+-- MainKaLu(P,I,J,K,L,Q) --
+---------------------------
+
+-- AIM:
+-- Main function for the computation of the
+-- Kazhdan-Lusztig polynomials with respect
+-- to two S-varieties Delta_P e Delta_Q, with
+-- Delta_Q contained in Delta_P and S ambient
+-- Schubert variety. NOTE: this is a shorter
+-- version of the original MainKaLu's code.
+--
+-- INPUT:
+-- P, Q - lists of integers defining Delta_P
+--        and Delta_Q with respect to the flag of S
+-- I,J,K,L - data defining S
+--
+-- LOCAL VARIABLES:
+-- ADM - 4-indices list which contains all
+--       P-admissible vectors T such that
+--       P <= T <= Q. ADM[H,Z] consists of
+--       two lists; the latter is the vector
+--       T (with respect to the essential flag
+--       of P) and the former is the vector of
+--       pointers TA to its essential conditions.
+--       The value H-1 represents the distance between
+--       T and P, whereas Z stands for the position
+--       of T in the list ADM[H], which is ordered
+--       with respect to the number of essential
+--       conditions of the vectors.
+--
+-- OUTPUT:
+-- BPQ - polynomial
+--
+-- SUBFUNCTIONS:
+-- Actual, TauPQ, DistanzaSigma, TauPQAmmissibile, OrdineCondizioni
+
+Define MainKaLu(P,I,J,K,L,Q)
+TopLevel TauPQ;
+TopLevel DistanzaSigma;
+TopLevel Actual;
+TopLevel TauPQAmmissibile;
+TopLevel OrdineCondizioni;
+
+GPQ:=[];
+Omega:=Len(I);
+Zero:=[0 | Variabile In 1..Omega];
+QA:=Actual(Q,I,J,K,L);
+
+-- Inizializzo ADM con i dati di P
+
+ADM:=[[[P,[H | H In 1..Omega]]]];
+
+-- Calcolo della tabella di tutte le varietà Delta_Tau che 
+-- sono strettamente comprese tra Delta_P e Delta_Q e che 
+-- sono P-ammissibili.
+
+V:=TauPQ(P,Q); 
+ADM:=concat(ADM,TauPQAmmissibile(P,I,J,K,L,V));
+
+-- Ordino rispetto al numero di condizioni essenziali i 
+-- termini conservati in ADM con stessa distanza da P
+
+Max:=len(ADM);
+  For H:=2 To Max Do
+  SortBy(ref ADM[H],OrdineCondizioni);
+  EndFor;
+
+-- Aggiungiamo Q alla fine della matrice ADM
+-- Attenzione al caso in cui P=Q!!!!!
+
+ADM:=concat(ADM,[[[Q,QA]]]);
+
+-- Calcolo del polinomio di Kazhdan-Lusztig B_PQ.
+
+GPQ:=DistanzaSigma(ADM,I,J,K,L);
+Return GPQ;
+EndDefine;
+
+------------------------
+-- Binomiale(Omega,D) --
+------------------------
+
+-- AIM:
+-- For any N <= Omega and K < D, the number
+-- Bin(N-1+K,K) of terms in N variables of
+-- degree K is computed.
+--
+-- INPUT:
+-- Omega, D - integers 
+--
+-- OUTPUT:
+-- B - list of all binomials Bin(N-1+K,K).
+
+Define Binomiale(Omega,D)
+  B:=[[ 0 | K In 1..(D+1)] | N In 1..Omega];
+  For N:=1 To Omega Do
+    B[N,1]:=1;
+    For K:=1 To D Do
+      B[N,K+1]:=(B[N,K]*(K+N-1))/K ;
+    EndFor;
+  EndFor;
+  Return B;
+EndDefine;
+
+-------------------
+-- Divide(L1,L2) --
+-------------------
+
+-- AIM:
+-- Given two vectors L1 and L2 of the same
+-- length, we check if L1[T] <= L2[T] for
+-- all T.
+--
+-- INPUT:
+-- L1, L2 - lists of integers
+--
+-- OUTPUT:
+-- A - logical variable which is TRUE if
+--     L1[T] <= L2[T] for all T.
+
+Define Divide(L1,L2)
+  A:=True;
+  K:=1;
+  While K<=len(L1) And A Do
+    If L1[K]>L2[K] Then
+      A:=False;
+    Else 
+      K:=K+1;
+    EndIf;
+  EndWhile;
+  Return A;
+EndDefine;
+
+----------------
+-- TauPQ(P,Q) --
+----------------
+
+-- AIM:
+-- Given two vectors P and Q, we find all
+-- vectors V with P < V < Q.
+--
+-- INPUT:
+-- P, Q - vectors corresponding to
+--        S-admissible varieties
+-- OUTPUT:
+-- T - list of all vectors between P and Q.
+--     For all H and K, T[H,K] is the H-th
+--     vector of degree K + Sum(P), with
+--     respect to the degLex order.
+--
+-- SUBFUNCTIONS:
+-- Binomiale, Divide
+
+Define TauPQ(P,Q)
+  TopLevel Binomiale;
+  TopLevel Divide;
+
+-- Compute all vectors whose distance from S 
+-- is less than the one of Q. They will be 
+-- saved w.r.t. degLex order.
+
+  Omega:=len(P);
+  D:=sum(Q);
+
+  B:=Binomiale(Omega,D-1);
+
+  E:=[[0 | K In 1..Omega] | H In 1..Omega];
+  For K:=1 To Omega Do
+    E[K,K]:=1;
+  EndFor;
+  Tau:=[ 0 | K In 1..(D-1)];
+
+  If D>1 Then
+    Tau[1]:=E;
+
+    For K:=2 To D-1 Do
+      TK:=[Tau[K-1,H]+E[1] | H In 1..B[Omega,K]];
+      For J:=2 To Omega Do
+        I:=sum([B[Omega-H+1,K-1] | H In 1..(J-1)])+1;
+        TK:=concat( TK,[Tau[K-1,C]+E[J] | C In I..(B[Omega,K])]);
+      EndFor;
+      Tau[K]:=TK;
+    EndFor;
+  EndIf;
+
+-- Take only the terms whose distance from S is greater
+-- than the one of P
+
+  T:=[[] | K In (sum(P)+1)..(D-1)];
+  For K:=sum(P)+1 To D-1 Do
+    LTK:=Len(Tau[K]);
+    For H:=1 To LTK Do
+      If Divide(P,Tau[K,H]) And Divide(Tau[K,H],Q) Then
+        T[K-sum(P)]:=concat(T[K-sum(P)],[Tau[K,H]]);
+      EndIf;
+    EndFor;
+  EndFor;
+  Return T;
+EndDefine;
+
+--------------------------------
+-- SchubertVariety(P,I,J,K,L) --
+--------------------------------
+
+-- AIM:
+-- Given a Schubert variety S, we check if
+-- a vector P corresponds to an S-variety.
+-- In other words, we check conditions (4),
+-- written in the form of Remark 2.6.
+--
+-- INPUT:
+-- P - vector of integers
+-- I, J, K, L - data defining the Schubert
+--              variety S
+--
+-- LOCAL VARIABLES:
+-- M, N - conditions on the components of P,
+--        except for P[1].
+--
+-- OUTPUT:
+-- A - logical variable which is TRUE if
+--     P corresponds to an S-variety.
+
+Define SchubertVariety(P,I,J,K,L)
+  A:=True;
+  Omega:=len(I);
+  If 0 <= P[1] And P[1] <= K-I[1] Then
+    Alpha:=1;
+    While Alpha<Omega And A Do
+      M:=max(0,I[Alpha]+P[Alpha]-I[Alpha+1]);
+      N:=min(J[Alpha+1]-J[Alpha]+I[Alpha]+P[Alpha]-I[Alpha+1], K-I[Alpha+1]);
+      If M<= P[Alpha+1] And P[Alpha+1]<=N Then
+        Alpha:=Alpha+1;
+      Else
+        A:=False;
+      EndIf;
+    EndWhile;
+
+    If A And J[Omega]-I[Omega]-P[Omega]>L-K Then
+      A:=False;
+    EndIf;
+  Else 
+    A:=False;
+  EndIf;  
+  Return A;
+EndDefine;
+
+-----------------------
+-- Actual(P,I,J,K,L) -- 
+-----------------------
+-- Note: this function should be called
+-- "Essential", but we agreed not to
+-- update its name.
+-----------------------
+
+-- AIM:
+-- Given an S-variety Delta_P, we
+-- determine its essential conditions.
+--
+-- INPUT:
+-- I, J, K, L - data of the Schubert
+--              variety S
+-- P - vector corresponding to the
+--     S-variety Delta_P
+--
+-- OUTPUT:
+-- PA - vector containing the integers
+--      corresponding to the numbers of
+--      the essential conditions (e.g.
+--      1 in PA means that the 1st
+--      condition of P is essential).
+
+Define Actual(P,I,J,K,L)
+  Omega:=len(P);
+  If Omega>=2 Then
+    PA:=[];
+    PI:=P+I;
+    If PI[2]-PI[1]<J[2]-J[1] Then
+      PA:=concat(PA,[1]);
+    EndIf;
+    For Alpha:=2 To Omega-1 Do
+      If PI[Alpha+1]-PI[Alpha]<J[Alpha+1]-J[Alpha] And PI[Alpha-1]<PI[Alpha] Then
+        PA:=concat(PA,[Alpha]);
+      EndIf;        
+    EndFor;
+    If K+J[Omega]<L+PI[Omega] And PI[Omega-1]<PI[Omega] Then
+      PA:=concat(PA,[Omega]);
+    EndIf;     
+  Else
+   PA:=[1];
+  EndIf;
+  Return PA;
+EndDefine;
+
+--------------------------
+-- PQAmmissibile(PA,QA) --
+--------------------------
+
+-- AIM:
+-- Given P and Q, we check whether
+-- Delta_Q is a Delta_P variety.
+--
+-- INPUT:
+-- QA, PA - lists containing the pointers
+--          to the essential conditions
+--          of Q and P
+--
+-- OUTPUT:
+-- B - logical variable which is TRUE if
+--     Q is P-admissible
+
+Define PQAmmissibile(PA,QA)
+  B:=True;
+  OmegaPA:=len(PA);
+  OmegaQA:=len(QA);
+  If OmegaQA<=OmegaPA Then
+    Z:=1;
+    While B And Z<=OmegaQA Do
+      If QA[Z] IsIn PA Then
+        Z:=Z+1;
+      Else
+        B:=False;
+      EndIf;
+    EndWhile;
+  Else 
+    B:=False;
+  EndIf;
+  Return B;
+EndDefine;
+
+-----------------------------------
+-- TauPQAmmissibile(P,I,J,K,L,T) -- 
+-----------------------------------
+
+-- AIM:
+-- Given the list of all vectors strictly
+-- between P and Q, we construct the one
+-- containing only the P-admissible
+-- vectors.
+--
+-- INPUT:
+-- P - vector corresponding to Delta_P
+-- I, J, K, L - data defining the Schubert
+--              variety S
+-- T - list of all vectors between P and
+--     Q (P, Q are excluded)
+--
+-- OUTPUT:
+-- NT -- list of all P-admissible vectors
+--       strictly containing Delta_Q and
+--       different from P. NT[C,H] is the
+--       H-th vector of distance from S equal 
+--       to C + Sum(P) with respect to the 
+--       degLex order.
+--
+-- SUBFUNCTIONS:
+-- SchubertVariety, Actual
+
+Define TauPQAmmissibile(P,I,J,K,L,T)
+  TopLevel SchubertVariety; 
+  TopLevel Actual;
+
+  D:=len(T);
+  NT:=[[] | C In 1..D];
+
+  PA:=Actual(P,I,J,K,L);
+  OmegaP:=len(PA);
+  For C:=1 To D Do
+    LTC:=len(T[C]);
+    For H:=1 To LTC Do
+      TA:=Actual(T[C,H],I,J,K,L);
+      OmegaT:=len(TA);
+      If SchubertVariety(T[C,H],I,J,K,L) Then
+        If PQAmmissibile(PA,TA) Then
+          NT[C]:=concat(NT[C],[[T[C,H],TA]]);
+        EndIf;
+      EndIf;
+    EndFor;
+  EndFor;
+  Return NT;
+EndDefine;
+
+--------------------------------
+-- DistanzaSigma(ADM,I,J,K,L) --
+--------------------------------
+
+-- AIM:
+-- Given the list ADM consisting of P, of
+-- Q and of all P-admissible vectors bewteen
+-- them, we compute, whenever it makes sense,
+-- the polynomials A_TX, G_TX and B_TX with T
+-- and X in ADM.
+--
+-- INPUT:
+-- ADM - 4-indices list which contains all
+--       P-admissible vectors T such that
+--       P <= T <= Q. ADM[H,Z] consists of
+--       two lists; the latter is the vector
+--       T (with respect to the essential flag
+--       of P) and the former is the vector of
+--       pointers TA to its essential conditions.
+--       The value H-1 represents the distance between
+--       T and P, whereas Z stands for the position
+--       of T in the list ADM[H], which is ordered
+--       with respect to the number of essential
+--       conditions of the vectors.
+-- I,J,K,L - data defining the Schubert variety S
+-- 
+-- LOCAL VARIABLES:
+-- LADM - length of ADM. In particular, LADM-1 is
+--        the distance between Q and P.
+-- LRigheADM - list containing the lenght of ADM[H],
+--             as H varies through {1, ..., LADM}.
+-- LC - number of essential conditions of the first
+--      element of ADM[H], for any H
+-- IndiciInizio - list such that IndiciInizio[H,C] is the
+--                index in ADM[H] of the first vector
+--                having C essential conditions. It is
+--                set to 0 if there are not such vectors
+--                in ADM[H].
+-- OUTPUT:
+-- G_PQ - polynomial
+--
+-- SUBFUNCTIONS:
+-- Divide, Apol, PQAmmissibile, CalcoloMTX, Utilde, CalcoloXTA.
+
+Define DistanzaSigma(ADM,I,J,K,L)
+  TopLevel Divide;
+  TopLevel Apol;
+  TopLevel PQAmmissibile;
+  TopLevel CalcoloMTX;
+  TopLevel Utilde; 
+  TopLevel CalcoloXTA;
+
+  Omega:=Len(ADM[1,1,1]);
+  LADM:=Len(ADM);
+  LRigheADM:=[Len(ADM[H]) | H In 1..LADM];
+
+-- Computation of IndiciInizio
+
+  IndiciInizio:=[ [0 | Variabile In 1..Omega] | H In 1..LADM ];
+  For H:=1 To LADM Do
+    LC:=len(ADM[H,1,2]);
+    IndiciInizio[H,LC]:=1;
+    C:=2;
+    While C<=LRigheADM[H] Do
+      If len(ADM[H,C,2])=LC Then
+        C:=C+1;
+      Else
+        LC:=len(ADM[H,C,2]);
+        IndiciInizio[H,LC]:=C;
+        C:=C+1;
+      EndIf;
+    EndWhile;
+  EndFor;
+
+-- Initialize A, G, B. IMPORTANT: at the end, A_TX = 0 if Delta_T
+-- does not contain Delta_X; G_TX = -1 if Delta_X is not a Delta_T variety.
+
+  A:=[ [ [ [ 0 | W In 1..LRigheADM[VV]] | VV In (H+1)..LADM  ] | Z In 1..LRigheADM[H] ] | H In 1..(LADM-1) ];
+
+  B:=[ [ [ [ -1 | W In 1..LRigheADM[VV]] | VV In (H+1)..LADM  ] | Z In 1..LRigheADM[H] ] | H In 1..(LADM-1) ];
+
+  G:=[ [ [ [ -1 | W In 1..LRigheADM[VV]] | VV In (H+1)..LADM  ] | Z In 1..LRigheADM[H] ] | H In 1..(LADM-1) ];
+
+-- The following nidification of for cycles is
+-- given with respect to the order of the
+-- mutual distances between pairs of S-varieties
+
+-- Computation of A
+
+  For Sigma:=1 To LADM-1 Do
+    For H:=1 To LADM-Sigma Do
+      For Z:=1 To LRigheADM[H] Do
+        V:=Sigma;
+        For W:=1 To LRigheADM[V+H] Do
+          X:=ADM[V+H,W];
+          T:=ADM[H,Z];
+          Logica:=Divide(T[1],X[1]);
+          If Logica=True Then
+            A[H,Z,V,W]:=Apol(T,I,X[1]);
+          EndIf;
+        EndFor;
+      EndFor;
+    EndFor;
+  EndFor;
+
+-- Computation of G and B
+
+  V:=1; 
+  For H:=1 To LADM-1 Do
+    For Z:=1 To LRigheADM[H] Do
+      For W:=1 To LRigheADM[V+H] Do
+        X:=ADM[V+H,W];
+        T:=ADM[H,Z];
+
+-- If A[H,Z,V,W]<>0, we know that Delta_T contains
+-- Delta_X. Moreover, if X is T-admissible, we can
+-- compute G_TX and B_TX; otherwise, we have to
+-- replace X with X^T and put B_TX = B_TX^T
+-- (G_TX does not have sense in this case).
+ 
+        If A[H,Z,V,W]<>0 Then 
+          If PQAmmissibile(T[2],X[2]) Then
+            MTX:=CalcoloMTX(T[1],I,J,K,L,X[1]);
+            G[H,Z,V,W]:= Utilde(MTX,A[H,Z,V,W]);
+            B[H,Z,V,W]:=A[H,Z,V,W]-G[H,Z,V,W];
+          Else
+
+-- If X is not T-admissible, X^T = T. B_TX = 1
+-- and G_TX does not have sense in this case.
+
+            B[H,Z,V,W]:=1;
+          EndIf;
+        EndIf;
+      EndFor;
+    EndFor;
+  EndFor;
+
+  For Sigma:=2 To LADM-1 Do
+    For H:=1 To LADM-Sigma Do
+      For Z:=1 To LRigheADM[H] Do
+        V:=Sigma;
+        For W:=1 To LRigheADM[V+H] Do
+          X:=ADM[V+H,W];
+          T:=ADM[H,Z];
+          If A[H,Z,V,W]<>0 Then
+            If PQAmmissibile(T[2],X[2]) Then
+              MTX:=CalcoloMTX(T[1],I,J,K,L,X[1]);
+
+-- Computation of RTX
+
+              RTX:=A[H,Z,V,W];
+              For MU:=H+1 To V+H-1 Do
+                For Col:=1 To LRigheADM[MU] Do
+                  Y:=ADM[MU,Col];
+
+-- Check if Delta_T contains Delta_Y, Delta_Y contains Delta_X
+-- and Y is T-admissibile (the last one is equivalent to
+-- G[H,Z,MU-H,Col]<>-1).
+
+                  If A[H,Z,MU-H,Col]<>0 And A[MU,Col,V+H-MU,W]<>0 And G[H,Z,MU-H,Col]<>-1 Then
+                    RTX:=RTX-G[H,Z,MU-H,Col]*B[MU,Col,V+H-MU,W];
+                  EndIf;
+                EndFor;
+              EndFor;
+              G[H,Z,V,W]:=Utilde(MTX,RTX);
+              B[H,Z,V,W]:=RTX-G[H,Z,V,W];
+            Else
+
+-- Find the essential conditions XTA:=(X^T)A of X^T
+
+              XTA:=CalcoloXTA(T,I,J,K,L,X);
+
+-- Find the variety [X[1],XTA] in ADM[C], with C >= H
+-- because it is contained in Delta_T and contains
+-- Delta_X by construction.
+
+              NC:=Len(XTA);
+              Logica:=False;
+              HH:=H;
+              While Logica=False And HH < V+H Do
+                N1:=IndiciInizio[HH,NC];
+                If N1>0 Then
+                  If NC=Omega Then
+                    N2:=LRigheADM[HH]+1;
+                  Else
+                    C:=1;
+                    While NC+C<=Omega And IndiciInizio[HH,NC+C]=0 Do
+                      C:=C+1;
+                    EndWhile;
+                    If NC+C>Omega Then
+                      N2:=LRigheADM[HH]+1;
+                    Else
+                      N2:=IndiciInizio[HH,NC+C];
+                    EndIf;
+                  EndIf;
+                  While N1<N2 And Logica=False Do
+                    App:=ADM[HH,N1];        
+                    If [ X[1,XTA[N]] | N In 1..NC] = [ App[1,XTA[N]] | N In 1..NC] Then
+                      Logica:=True;
+                      If HH<>H Then
+                        B[H,Z,V,W]:=B[H,Z,HH-H,N1];
+                      Else
+                        B[H,Z,V,W]:=1;
+                      EndIf;
+                    EndIf;
+                    N1:=N1+1;
+                  EndWhile;
+                EndIf;
+                HH:=HH+1;
+              EndWhile;
+            EndIf;
+          EndIf;
+        EndFor;
+      EndFor;
+    EndFor;
+  EndFor;
+  Return G[1,1,LADM-1,1];;
+EndDefine;
+
+-----------------------------
+-- CalcoloMTX(T,I,J,K,L,X) --
+-----------------------------
+
+-- AIM:
+-- computation of dim Delta_T - dim Delta_X by
+-- means of the formula obtained by interpreting
+-- such property by means of the Ferrer's
+-- diagrams.
+--
+-- INPUT:
+-- I, J, K, L - data defining the Schubert
+--              variety S
+-- T, X - vectors representing Delta_T and Delta_X
+--
+-- OUTPUT:
+-- MTX - it is dim Delta_T - dim Delta_X
+
+Define CalcoloMTX(T,I,J,K,L,X)
+  Omega:=Len(T);
+  LambdaT:=[0 | H In 1..K];
+  LambdaX:=[0 | H In 1..K];
+  IT:=I+T;
+  IX:=I+X;
+
+  V:=1;
+  For H:=1 To Omega Do
+    Valore:=L-K-J[H]+IT[H];
+    While V<=IT[H] Do
+      LambdaT[V]:=Valore;
+      V:=V+1;
+    EndWhile;
+  EndFor;
+
+  V:=1;
+  For H:=1 To Omega Do
+    Valore:=L-K-J[H]+IX[H];
+    While V<=IX[H] Do
+      LambdaX[V]:=Valore;
+      V:=V+1;
+    EndWhile;
+  EndFor;
+
+  MTX:=sum(LambdaX-LambdaT);
+  If MTX<0 Then
+    println "WARNING: negative MTX";
+  EndIf;
+  Return MTX;
+EndDefine;
+
+-----------------------------
+-- CalcoloXTA(T,I,J,K,L,X) --
+-----------------------------
+
+-- AIM:
+-- Given two S-varieties Delta_T and Delta_X,
+-- with X T-admissible, we describe X by means
+-- of the essential flag of T.
+--
+-- INPUT:
+-- I, J, K, L - data defining the Schubert
+--              variety S
+-- T, X - lists with T[1] and X[1] increments
+--        with respect to S and T[2] and X[2]
+--        lists of pointers to the essential
+--        flags of Delta_T and Delta_X.
+--
+-- OUTPUT:
+-- XTA - list containing the vector
+--       of increments X^T (with
+--       respect to S) and the pointers
+--       to the essential flag of S.
+
+Define CalcoloXTA(T,I,J,K,L,X);
+  Ome:=Len(T[2]);
+  If Ome>=2 Then
+    XTA:=[];
+    XTI:=X[1]+I;
+    If XTI[T[2,2]]-XTI[T[2,1]]<J[T[2,2]]-J[T[2,1]] Then
+      XTA:=concat(XTA,[T[2,1]]);
+    EndIf;
+
+    For Alpha:=2 To Ome-1 Do
+      If XTI[T[2,Alpha+1]]-XTI[T[2,Alpha]]<J[T[2,Alpha+1]]-J[T[2,Alpha]] And XTI[T[2,Alpha-1]]<XTI[T[2,Alpha]] Then
+        XTA:=concat(XTA,[T[2,Alpha]]);
+      EndIf;        
+    EndFor;
+
+    If K+J[T[2,Ome]]<L+XTI[T[2,Ome]] And XTI[T[2,Ome-1]]<XTI[T[2,Ome]] Then
+      XTA:=concat(XTA,[T[2,Ome]]);
+    EndIf;     
+  Else
+    XTA:=[T[2,1]];
+  EndIf;
+
+  Return XTA;
+EndDefine;
+
+-------------
+-- Hpol(B) --
+-------------
+
+-- AIM:
+-- Given an integer B, we compute the sum of
+-- even powers X[1]^2A, where X[1] is the
+-- first unknown of the current ring (by
+-- default, it is Q[x,y,z]).
+--
+-- INPUT:
+-- B - integer
+--
+-- OUTPUT:
+-- H - the polynomial described above.
+
+Define Hpol(B)
+  TopLevel CurrentRing;
+  X:=indets(CurrentRing);
+  If B<0 Then
+    H:=0;
+  Else 
+    H:=sum([X[1]^(2*A) | A In 0..B]);
+  EndIf;
+
+  Return H;
+EndDefine;
+
+------------
+-- Pol(B) --
+------------
+
+-- AIM:
+-- Given an integer B, we compute the product
+-- of all polynomials Hpol(A) (see the
+-- corresponding function) as A runs through
+-- {1, ..., B - 1}.
+--
+-- INPUT:
+-- B - integer
+--
+-- OUTPUT:
+-- P - polynomial as described above
+--
+-- SUBFUNCTIONS:
+-- Hpol
+
+Define Pol(B)
+  TopLevel Hpol;
+  If B<0 Then
+    P:=0;
+  Else
+    P:=1;
+  EndIf;
+
+  If B>1 Then
+    P:=product([Hpol(A) | A In 0..(B-1)]);
+  EndIf;
+
+  Return P;
+EndDefine;
+
+-----------------
+-- Apol(T,I,X) --  
+-----------------
+
+-- AIM:
+-- Given two S-varieties Delta_T and Delta_X,
+-- with Delta_X contained in Delta_T, we compute
+-- the polynomial A_TX of the fibre of Pi_T at
+-- (any point of) Delta_X.
+--
+-- INPUT:
+-- T - pair of lists: the former contains the vector
+--     defining Delta_T, while the latter is the list 
+--     of pointers to the essential conditions of Delta_T
+-- I - some of the data defining the Schubert variety S
+-- X - vector defining another S-variety
+--
+-- OUTPUT:
+-- A - polynomial of the fiber F_TX
+--
+-- SUBFUNCTIONS:
+-- Pol
+
+Define Apol(T,I,X)
+  TA:=T[2];
+  OmegaT:=len(TA);
+  A:=Pol(I[TA[1]]+X[TA[1]])/( Pol(I[TA[1]]+T[1,TA[1]]) * Pol(X[TA[1]]-T[1,TA[1]]) );
+  If OmegaT > 1 Then
+    L:=[ Pol(I[TA[Alpha]]+X[TA[Alpha]] - I[TA[Alpha-1]]-T[1,TA[Alpha-1]])/( Pol(I[TA[Alpha]]+T[1,TA[Alpha]] - I[TA[Alpha-1]]-T[1,TA[Alpha-1]]) * Pol(X[TA[Alpha]]-T[1,TA[Alpha]]) ) | Alpha In 2..OmegaT];
+    A:=A*product(L);
+  EndIf;
+
+  Return A;
+EndDefine;
+
+-------------------
+-- Utilde(N,F) ----
+-------------------
+
+-- AIM:
+-- Given a polynomial F and an integer N,
+-- we delete all monomials of degree < N
+-- of F and make the resulting polynomial
+-- symmetric.
+--
+-- INPUT:
+-- N - integer
+-- F - polynomial
+--
+-- OUTPUT:
+-- H - polynomial
+
+Define Utilde(N,F)
+  TopLevel CurrentRing;
+  X:=indets(CurrentRing);
+  If F <> 0 Then
+    M := deg(F);
+  Else
+    M := 0;
+  EndIf;
+
+  If N > M Then
+    H := 0;
+  Else
+    If N > 0 Then
+      H := F;
+
+-- Truncate H
+
+      For T := 1 To N Do
+        H := (H - eval(H, [0]))/X[1];
+      EndFor;
+
+-- Save the coefficients we need to symmetrize H
+
+      CO := [eval(H, [0])];
+      G := H;
+      M := deg(H);
+      For T := 1 To M Do
+        G := (G - CO[T])/X[1];
+        append(ref CO, eval(G, [0]));
+      EndFor;
+
+-- Now we symmetrize H
+
+      H := H*(X[1]^N);
+
+-- Delete the coefficient of the middle term
+
+      remove(ref CO, 1); 
+      For T := 1 To M Do
+        H := H + CO[T]*(X[1]^(N - T));
+      EndFor;
+    EndIf;
+  EndIf;
+
+  Return H;
+EndDefine;
+
+--------------------------
+-- PiSmall(P,I,J,K,L,Q) --
+--------------------------
+
+-- AIM:
+-- given P, Q, check if m_P - m_Q - 2*dim F_PQ > 0
+-- (see definition of smallness)
+
+-- INPUT:
+-- P, I, J, K, L - data for Delta_P in its essential form
+-- Q - P-admissible vector
+
+-- LOCAL VARIABLES:
+-- MPQ - m_P - m_Q
+-- DimFPQ - dimension of the fibre F_PQ
+-- CSmall - True if the condition above is satisfied
+
+-- OUTPUT:
+-- CSmall
+
+-- SUBFUNCTIONS:
+-- CalcoloMTX
+
+Define PiSmall(P,I,J,K,L,Q)
+
+  TopLevel CalcoloMTX;
+
+  CSmall := False;
+  Omega := Len(P);
+  Eps := Q - P;
+  MPQ := CalcoloMTX(P,I,J,K,L,Q);
+
+-- Computation of the dimension of the fibre
+
+  DimFPQ := Eps[1]*(I[1] + P[1]);
+  For U := 2 To Omega Do
+    DimFPQ := DimFPQ + Eps[U]*(I[U] + P[U] - I[U - 1] - P[U - 1]);
+  EndFor;
+
+  If MPQ - 2*DimFPQ > 0 Then
+    CSmall := True;
+  EndIf;
+
+  Return CSmall;
+EndDefine;
+
+-------------------------------
+-- Riporto(Omega, Inp, Lmax) --
+-------------------------------
+
+-- AIM:
+-- given a vector of integers, check if its components
+-- are increasing, except for the middle one. At each
+-- step, increase by one the first component and repeat
+-- the process until the last one is <= Lmax
+--
+-- INPUT:
+-- Omega - 2*Omega+2 is the length of the vector
+-- Inp - vettor of integers
+-- Lmax - bound on the last component of Inp
+--
+-- LOCAL VARIABLES:
+-- CRip - True if the components of Inp are not
+--        ordered as said above.
+
+Define Riporto(Omega,ref Inp)
+
+  H := 1;
+  CRip := True;
+
+-- Check if all Inp[T] are positive, otherwise
+-- set Inp[T] := T
+
+  For T := 1 To 2*Omega + 1 Do
+    If Inp[T] <= 0 Then
+    Inp[T] := T;
+    EndIf;
+  EndFor;
+
+-- Check if the first Omega + 1 components are increasing
+  
+  While H <= Omega Do
+    If Inp[H] < Inp[H + 1] Then
+      H := H + 1;
+      CRip := True;
+    Else
+      Inp[H + 1] := Inp[H + 1] + 1;
+      If CRip Then
+        For T := 1 To H Do
+          Inp[T] := T;
+        EndFor;
+        CRip := False;
+      EndIf;
+    EndIf;
+  EndWhile;
+
+-- Check if Inp[Omega + 1] <= Inp[Omega + 2]
+
+  While H = Omega + 1 Do
+    If Inp[H] < Inp[H + 1] Then
+      H := H + 1;
+      CRip := True;
+    Else
+      Inp[H + 1] := Inp[H + 1] + 1;
+      If CRip Then
+        For T := 1 To H Do
+          Inp[T] := T;
+        EndFor;
+      EndIf;
+      CRip := False;
+    EndIf;
+  EndWhile;
+
+-- Check if the last Omega + 1 components are increasing
+
+  While H <= 2*Omega + 1 Do
+    If Inp[H] < Inp[H + 1] Then
+      H := H + 1;
+      CRip := True;
+    Else
+      Inp[H + 1] := Inp[H + 1] + 1;
+      If CRip Then
+        For T := 1 To H Do
+          Inp[T] := T;
+        EndFor;
+      EndIf;
+    EndIf;
+  EndWhile;
+  Return Inp;
+EndDefine;
+
+-----------------------------
+-- LightPiSmall(I, J, K, L) --
+-----------------------------
+
+-- AIM:
+-- We check if the smallness condition given
+-- in Proposition 4.6 is satisfied.
+--
+-- INPUT:
+-- I, J, K, L - data defining the Schubert
+--              variety S
+--
+-- LOCAL VARIABLES:
+-- Omega - length of I and J
+-- Lambda - sequence associated to S, which
+--          gives its Ferrer's diagram
+--
+-- OUTPUT:
+-- CSmall - logical variable which is TRUE
+--          if Pi is small.
+
+Define LightPiSmall(I, J, K, L)
+
+  Omega := Len(I);
+  CSmall := True;
+  Lambda := [L - K - J[T] + I[T] | T In 1..Omega];
+
+  If Omega > 1 Then
+    If I[1] > Lambda[1] - Lambda[2] Then
+      CSmall := False;
+    Else
+      If I[Omega] - I[Omega - 1] > Lambda[Omega] Then
+        CSmall := False;
+      Else
+        H := 2;
+        While H <= Omega - 1 And CSmall Do
+          If I[H] - I[H - 1] > Lambda[H] - Lambda[H + 1] Then
+            CSmall := False;
+          EndIf;
+          H := H + 1;
+        EndWhile;
+      EndIf;
+    EndIf;
+  Else
+    If I[1] > Lambda[1] Then
+      CSmall := False;
+    EndIf;
+  EndIf;
+  Return CSmall;
+EndDefine;
