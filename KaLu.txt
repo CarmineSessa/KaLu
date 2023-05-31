@@ -67,7 +67,7 @@ Define MainKaLu(I,J,K,L,I1,J1)
 -- Check if I,J,K,L give a Schubert variety
 
   If Not(SchubertVariety(Zero,I,J,K,L)) Then
-    PrintLn "The data of S do not satisfy conditions of Remark 2.7" on Fi;
+    PrintLn "Check the input concerning S." on Fi;
   Else
     ZeroA:=Actual(Zero,I,J,K,L);
     Omega := Len(ZeroA);
@@ -92,7 +92,7 @@ Define MainKaLu(I,J,K,L,I1,J1)
 -- Check if I1,J1,K,L give a Schubert variety
 
       If Not(SchubertVariety(Zero1,I1,J1,K,L)) Then
-        PrintLn "The data of S' do not satisfy conditions of Remark 2.7" on Fi;
+        PrintLn "Check the input concerning S." on Fi;
       Else
 
 -- Compute the sequences Lambda0 and
@@ -441,8 +441,6 @@ EndDefine;
 -- AIM:
 -- Given a Schubert variety S, we check if
 -- a vector P corresponds to an S-variety.
--- In other words, we check conditions (4),
--- written in the form of Remark 2.6.
 --
 -- INPUT:
 -- P - vector of integers
